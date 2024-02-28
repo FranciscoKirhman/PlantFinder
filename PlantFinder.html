@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Species Database Query</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        .map-container {
+            width: 100%;
+            min-width: 500px; /* or any other value that you find appropriate */
+            height: 400px;
+        }
+
+        .images-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .grid-image {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+        }
+        #resultsTable {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #resultsTable th, #resultsTable td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        /* Modal styling for full-size image view */
+        #imageModal {
+            display: none; /* Initially hidden */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000; /* Ensures modal is above other content */
+            justify-content: center;
+            align-items: center;
+        }
+        #imageModal img {
+            max-width: 50%; /* Full-size image width */
+            max-height: 50%; /* Full-size image height */
+        }
+        .close-modal {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 30px;
+            color: #fff;
+            cursor: pointer;
+        }
+        /* Style for slider and input fields */
+        .range-field {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .range-field input[type=number], .search-input {
+            margin: 0 5px;
+            width: 80px;
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            width: calc(100% - 10px);
+            margin: 0 5px;
+        }
+        input[type=range]:focus {
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 5px;
+            background: #ddd;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            background: #007bff;
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+        }
+        .search-input[multiple] {
+            width: 100%;
+            max-width: 300px; /* Adjust as needed */
+            overflow-y: auto;
+        }
+    </style>    
+</head>
+<body>
+    <h1>Species Database Query</h1>
+    <div>
+        <!-- Range fields for Altitudinal -->
+        <div class="range-field">
+            <label for="altitudinal-inferior">Altitudinal Inferior:</label>
+            <input type="number" id="altitudinal-inferior" name="ALTITUDINAL_INFERIOR" value="">
+            <input type="range" id="altitudinal-inferior-slider" min="0" max="5000" value="" step="10">
+        </div>
+        <div class="range-field">
+            <label for="altitudinal-superior">Altitudinal Superior:</label>
+            <input type="number" id="altitudinal-superior" name="ALTITUDINAL_SUPERIOR" value="">
+            <input type="range" id="altitudinal-superior-slider" min="0" max="5000" value="" step="10">
+        </div>
+        <!-- Search inputs with autocomplete for various fields -->
+        <input type="text" class="search-input" name="ID" placeholder="ID" list="id-list">
+        <datalist id="id-list"></datalist>
+
+        <input type="text" class="search-input" name="SPECIFIC_EPITHET" placeholder="Specific Epithet" list="specific-epithet-list">
+        <datalist id="specific-epithet-list"></datalist>
+
+        <input type="text" class="search-input" name="GENUS" placeholder="Genus" list="genus-list">
+        <datalist id="genus-list"></datalist>
+
+        <!-- Dropdown for Type -->
+        <label for="type">Type:</label>
+        <select id="type" name="TYPE" class="search-input">
+            <option value="" selected>Select Type</option>
+            <!-- Options will be dynamically populated -->
+        </select>
+
+        <!-- Modified Distribution to be a multi-select dropdown -->
+        <label for="distribution">Distribution:</label>
+        <select id="distribution" name="DISTRIBUTION" class="search-input" multiple size="5">
+            <!-- Options will be dynamically populated -->
+        </select>
+
+        <select id="origin" name="ORIGIN" class="search-input">
+            <option value="" selected>Select Origin</option>
+            <option value="Endemica">Endémica</option>
+            <option value="Introducida">Introducida</option>
+            <option value="Nativa">Nativa</option>
+        </select>
+        <select id="distribution-north" name="DISTRIBUTION_NORTH" class="search-input">
+            <option value="" selected>Select Distribution North</option>
+            <!-- Options will be dynamically populated -->
+        </select>
+
+        <select id="distribution-south" name="DISTRIBUTION_SOUTH" class="search-input">
+            <option value="" selected>Select Distribution South</option>
+            <!-- Options will be dynamically populated -->
+        </select>
+    </div>
+    <div id="imageModal" class="modal-background">
+        <div class="modal-content">
+            <img src="" alt="Full size image">
+        </div>
+    </div>    
+    <button id="fetchDataBtn">Fetch Data</button>
+    <button id="clearDataBtn">Clear Data</button>
+    <div id="messages"></div>
+    <pre id="data"></pre>
+    <div id="map"></div>
+
+    <table id="resultsTable">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Species</th>
+                <th>Kingdom</th>
+                <th>Type</th>
+                <th>Origin</th>
+                <th>Distribution</th>
+                <th>Altitudinal Range</th>
+                <th>Images Available</th>
+                <th>Map</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Dynamic content will be inserted here -->
+        </tbody>
+    </table>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+
+
+// Function to show the modal with the full-size image
+function showModal(src) {
+    let modal = document.getElementById("imageModal");
+    if (!modal) {
+        modal = document.createElement("div");
+        modal.id = "imageModal";
+        document.body.appendChild(modal);
+
+        // Close button
+        const closeModal = document.createElement("div");
+        closeModal.textContent = "X";
+        closeModal.className = "close-modal";
+        closeModal.onclick = () => modal.style.display = "none";
+        modal.appendChild(closeModal);
+
+        const img = document.createElement("img");
+        modal.appendChild(img);
+
+        // Style for the modal set in CSS
+        modal.style.display = "flex";
+        img.src = src;
+
+        // Close modal when clicking outside the image
+        modal.addEventListener("click", (e) => {
+            if (e.target === modal) modal.style.display = "none";
+        });
+    } else {
+        modal.style.display = "flex";
+        modal.querySelector("img").src = src;
+    }
+}
+
+// Include the function queryGBIFSpeciesImages here
+// Add the modal div with id="imageModal" to your HTML if not dynamically created
+
+function setupSeeMoreLink(speciesInfoElement, taxonKey) {
+    // Select the hyperlink directly within the speciesInfoElement
+    const seeMoreLink = speciesInfoElement.querySelector('.see-more[data-taxon-key="' + taxonKey + '"]');
+    if (seeMoreLink) {
+        seeMoreLink.addEventListener('click', function(event) {
+            event.preventDefault(); // Prevent default anchor behavior
+            const imageContainer = this.nextElementSibling;
+
+            // Toggle the display of images
+            if (imageContainer.style.display === 'none') {
+                imageContainer.style.display = 'block';
+                queryGBIFSpeciesImages(taxonKey, imageContainer);
+            } else {
+                imageContainer.style.display = 'none';
+            }
+
+            // Remove the hyperlink from the DOM
+            this.remove();
+        });
+    }
+}
+
+
+// Remember to implement or include the queryGBIFSpeciesImages function as well
+
+
+// JavaScript for fetching data and populating selects
+document.addEventListener('DOMContentLoaded', function() {
+
+populateTypeDropdown('type', {
+    "Arbustivas": ["Arbustivas", "Arbusto o árbol pequeño", "Arbusto perenne", "Arbusto o subarbusto", "Arbusto parásito", "Arbusto suculento", "Arbusto trepador", "Arbusto"],
+    "Hierba": ["Hierba", "Hierba anual", "Hierba bienal", "Hierba anual o bienal", "Hierba anual, bienal o perenne", "Hierba bienal o perenne", "Hierba anual o perenne", "Hierba acuática perenne", "Hierba acuática anual", "Hierba acuática anual o bienal", "Hierba epífita o saxícola perenne", "Hierba epífita o terrestre perenne", "Hierba epífita perenne", "Hierba anual o subarbusto", "Hierba anual, hierba perenne o subarbusto", "Hierba bienal o subarbusto", "Hierba perenne o subarbusto", "Hierba parásita anual", "Hierba parásita perenne", "Hierba saxícola perenne", "Hierba suculenta anual", "Hierba suculenta perenne", "Hierba terrestre o saxícola perenne", "Hierba trepadora anual", "Hierba trepadora anual o bienal", "Hierba trepadora perenne"],
+    "Subarbusto": ["Subarbusto", "Subarbusto perenne", "Subarbustiva", "Subarbusto epífito o terrestre", "Subarbusto epífito", "Subarbusto parásito", "Subarbusto suculento", "Subarbusto trepador"],
+    "Árbol": ["Árbol", "Árbol suculento"]
+});
+
+// Populate other dropdowns like Origin and Distribution similarly
+});
+
+function populateTypeDropdown(selectId, typeOptions) {
+const select = document.getElementById(selectId);
+for (const [category, values] of Object.entries(typeOptions)) {
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = category;
+    values.forEach(value => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        optgroup.appendChild(option);
+    });
+    select.appendChild(optgroup);
+}
+}
+
+// Assign fetchData as an event handler for the button click
+document.getElementById('fetchDataBtn').addEventListener('click', fetchData);
+// Other supporting functions (initializeMap, displayMessage, etc.) should also be present in the script.
+
+
+// Populate Distribution dropdowns including the new multi-select for Distribution
+function populateDistributionSelect() {
+const distributionSelect = document.getElementById('distribution');
+Object.entries(regionNames).forEach(([code, name]) => {
+let option = new Option(name, code); // Display name, value is the code
+distributionSelect.add(option);
+});
+}
+// Populate all selects on page load
+window.onload = function() {
+populateRegionSelects(); // For Distribution North and South
+populateDistributionSelect(); // For the new Distribution multi-select
+};
+
+function queryGBIFSpeciesMedia(speciesList) {
+            const tableBody = document.querySelector('#resultsTable tbody');
+
+            // Corrected Region Names Definition
+            const regionNames = {
+                "AYP": "Arica y Parinacota",
+                "TAR": "Tarapacá",
+                "ANT": "Antofagasta",
+                "ATA": "Atacama",
+                "COQ": "Coquimbo",
+                "VAL": "Valparaíso",
+                "RME": "Metropolitana de Santiago",
+                "LBO": "Libertador General Bernardo O'Higgins",
+                "MAU": "Maule",
+                "NUB": "Ñuble",
+                "BIO": "Biobío",
+                "ARA": "Araucanía",
+                "LRI": "Los Ríos",
+                "LLA": "Los Lagos",
+                "AIS": "Aisén del General Carlos Ibáñez del Campo",
+                "MAG": "Magallanes y de la Antártica Chilena",
+                "JFE": "Juan Fernández",
+                "IPA": "Isla de Pascua",
+                "IDE": "Islas Desventuradas"
+            };
+
+            speciesList.forEach((speciesItem, index) => {
+                if (!speciesItem.GENUS || !speciesItem.SPECIFIC_EPITHET) return;
+
+                const speciesMatchUrl = `https://api.gbif.org/v1/species/match?genus=${speciesItem.GENUS}&name=${speciesItem.SPECIFIC_EPITHET}`;
+
+                fetch(speciesMatchUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.usageKey || data.kingdom === "Animalia") {
+                            console.log(`No relevant data or Animalia kingdom for ${speciesItem.GENUS} ${speciesItem.SPECIFIC_EPITHET}`);
+                            return;
+                        }
+
+                        const row = tableBody.insertRow();
+                        row.insertCell().textContent = speciesItem.ID || 'N/A';
+                        row.insertCell().textContent = `${speciesItem.GENUS} ${speciesItem.SPECIFIC_EPITHET}` || 'N/A';
+                        row.insertCell().textContent = data.kingdom || 'Kingdom not found';
+                        row.insertCell().textContent = speciesItem.TYPE || 'N/A';
+                        row.insertCell().textContent = speciesItem.ORIGIN || 'N/A';
+
+                        const distributionCell = row.insertCell();
+                        const distributionFullNames = speciesItem.DISTRIBUTION.split(',').map(code => regionNames[code.trim()] || code).join('<br>');
+                        distributionCell.innerHTML = distributionFullNames || 'N/A';
+
+                        row.insertCell().textContent = `${speciesItem.ALTITUDINAL_INFERIOR} - ${speciesItem.ALTITUDINAL_SUPERIOR}` || 'N/A';
+
+                        const cellImagesAvailable = row.insertCell();
+                        const totalImagesUrl = `https://api.gbif.org/v1/occurrence/search?taxonKey=${data.usageKey}&mediaType=StillImage&limit=0`;
+                        fetch(totalImagesUrl)
+                            .then(response => response.json())
+                            .then(totalData => {
+                                const totalImageCount = totalData.count;
+                                const linkHTML = totalImageCount > 0 
+                                    ? `<a href="#" class="see-more" data-taxon-key="${data.usageKey}">${totalImageCount} images available</a>` 
+                                    : 'No images available';
+                                cellImagesAvailable.innerHTML = linkHTML;
+
+                                if (totalImageCount > 0) {
+                                    const seeMoreLink = cellImagesAvailable.querySelector('.see-more');
+                                    seeMoreLink.addEventListener('click', function(event) {
+                                        event.preventDefault();
+                                        this.style.display = 'none';
+                                        let imageContainer = document.createElement('div');
+                                        imageContainer.className = 'images-container';
+                                        cellImagesAvailable.appendChild(imageContainer);
+                                        queryGBIFSpeciesImages(data.usageKey, imageContainer, this);
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching total image count:', error);
+                                cellImagesAvailable.textContent = 'Error fetching images';
+                            });
+
+                        const cellMap = row.insertCell();
+                        const mapPlaceholder = document.createElement('div');
+                        mapPlaceholder.id = `map-${index}`;
+                        mapPlaceholder.className = 'map-container';
+                        cellMap.appendChild(mapPlaceholder);
+                        initializeMap(mapPlaceholder.id, speciesItem.DISTRIBUTION.split(',').map(code => code.trim()));
+                    })
+                    .catch(error => console.error(`Error fetching data for ${speciesItem.GENUS} ${speciesItem.SPECIFIC_EPITHET}:`, error));
+            });
+        }
+
+
+
+function initializeMap(mapElementId, distributionCodes) {
+    const coordinates = {
+        "AYP": [-18.4783, -70.3126], "TAR": [-20.2140, -70.1522], "ANT": [-23.6524, -70.3954],
+        "ATA": [-27.3668, -70.3323], "COQ": [-29.9533, -71.3395], "VAL": [-33.0472, -71.6127],
+        "RME": [-33.4378, -70.6504], "LBO": [-34.5755, -71.0022], "MAU": [-35.4264, -71.6554],
+        "NUB": [-36.7226, -72.1114], "BIO": [-37.4689, -72.3527], "ARA": [-38.9489, -72.3311],
+        "LRI": [-40.2310, -72.3311], "LLA": [-41.4717, -72.9369], "AIS": [-45.5752, -72.0662],
+        "MAG": [-53.1638, -70.9171], "JFE": [-33.6148, -78.8311], "IPA": [-27.1127, -109.3497],
+        "IDE": [-26.0000, -80.5333]
+    };
+
+    const regionNames = {
+        "AYP": "Arica y Parinacota", "TAR": "Tarapacá", "ANT": "Antofagasta", "ATA": "Atacama",
+        "COQ": "Coquimbo", "VAL": "Valparaíso", "RME": "Metropolitana de Santiago",
+        "LBO": "Libertador General Bernardo O'Higgins", "MAU": "Maule", "NUB": "Ñuble",
+        "BIO": "Biobío", "ARA": "Araucanía", "LRI": "Los Ríos", "LLA": "Los Lagos",
+        "AIS": "Aisén del General Carlos Ibáñez del Campo", "MAG": "Magallanes y de la Antártica Chilena",
+        "JFE": "Juan Fernández", "IPA": "Isla de Pascua", "IDE": "Islas Desventuradas"
+    };
+
+    var mapContainer = document.getElementById(mapElementId);
+    if (!mapContainer) return; // Exit if map container is not found
+    mapContainer.style.width = '100%';
+    mapContainer.style.height = '400px';
+
+    var map = L.map(mapElementId).setView([-33.4378, -70.6504], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    distributionCodes.forEach(code => {
+        code = code.trim(); // Trim whitespace
+        if (coordinates[code]) {
+            L.marker(coordinates[code]).addTo(map).bindPopup(`${regionNames[code] || code}`);
+        }
+    });
+}
+
+
+
+
+
+function queryGBIFSpeciesImages(taxonKey, imageContainer, linkElement) {
+    const limit = 1000; // Adjust based on your needs
+    const occurrenceSearchUrl = `https://api.gbif.org/v1/occurrence/search?taxonKey=${taxonKey}&mediaType=StillImage&limit=${limit}`;
+
+    let imagesContainer = imageContainer.querySelector('.images-container');
+    if (!imagesContainer) {
+        imagesContainer = document.createElement('div');
+        imagesContainer.className = 'images-container';
+        imageContainer.appendChild(imagesContainer);
+    } else {
+        imagesContainer.innerHTML = '';
+    }
+
+    let seeMoreButton = imageContainer.querySelector('.see-more-images');
+    let seeLessButton = imageContainer.querySelector('.see-less-images');
+
+    const initialBatchSize = 10; // The initial number of images to display
+
+    // Create "See More" button if it does not exist
+    if (!seeMoreButton) {
+        seeMoreButton = document.createElement('button');
+        seeMoreButton.textContent = "See More";
+        seeMoreButton.className = 'see-more-images';
+        imageContainer.appendChild(seeMoreButton);
+    }
+
+    // Create "See Less" button if it does not exist
+    if (!seeLessButton) {
+        seeLessButton = document.createElement('button');
+        seeLessButton.textContent = "See Less";
+        seeLessButton.className = 'see-less-images';
+        imageContainer.appendChild(seeLessButton);
+    }
+
+    seeMoreButton.style.display = 'none';
+    seeLessButton.style.display = 'none';
+
+    fetch(occurrenceSearchUrl).then(response => response.json()).then(data => {
+        const allImages = data.results.flatMap(result => result.media ? result.media.filter(media => media.type === 'StillImage') : []).flat();
+        let displayedImagesCount = 0;
+
+        function displayImages(batchSize = initialBatchSize) {
+            const endIndex = displayedImagesCount + batchSize;
+            const imagesToDisplay = allImages.slice(displayedImagesCount, endIndex);
+            imagesToDisplay.forEach(media => {
+                const img = document.createElement('img');
+                img.src = media.identifier;
+                img.alt = "Species image";
+                img.className = "grid-image";
+                imagesContainer.appendChild(img);
+            });
+
+            displayedImagesCount += imagesToDisplay.length;
+            updateButtonsVisibility();
+        }
+
+        function updateButtonsVisibility() {
+            seeMoreButton.style.display = displayedImagesCount < allImages.length ? 'block' : 'none';
+            seeLessButton.style.display = displayedImagesCount > initialBatchSize ? 'block' : 'none';
+        }
+
+        displayImages(); // Display initial set of images
+
+        seeMoreButton.onclick = () => displayImages(50); // Load more images on click
+        seeLessButton.onclick = () => {
+            imagesContainer.innerHTML = ''; // Clear images
+            displayedImagesCount = 0; // Reset image count
+            seeMoreButton.style.display = 'none'; // Hide "See More" button
+            seeLessButton.style.display = 'none'; // Hide "See Less" button
+            linkElement.style.display = 'inline'; // Show the original hyperlink
+        };
+
+        if (displayedImagesCount > 0) {
+            seeLessButton.style.display = 'block'; // Show "See Less" button if images are displayed
+        }
+    }).catch(error => {
+        console.error('Error fetching images:', error);
+        imagesContainer.textContent = `Error fetching images: ${error.message}`;
+    });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Note: This snippet assumes that the showModal function and other related functionalities are correctly implemented.
+
+
+
+
+
+// Function to show a modal with the full-size image
+function showModal(src) {
+    const modal = document.getElementById('imageModal') || createModal();
+    const modalImg = modal.querySelector('img');
+    modalImg.src = src;
+    modal.style.display = 'flex';
+}
+
+// Function to create a modal if it doesn't exist
+function createModal() {
+    const modal = document.createElement('div');
+    modal.id = 'imageModal';
+    modal.style.display = 'none';
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.background = 'rgba(0, 0, 0, 0.8)';
+    modal.style.justifyContent = 'center';
+    modal.style.alignItems = 'center';
+    modal.style.zIndex = '1000';
+
+    const modalImg = document.createElement('img');
+    modalImg.style.maxWidth = '80%';
+    modalImg.style.maxHeight = '80%';
+    modal.appendChild(modalImg);
+
+    const closeModal = document.createElement('span');
+    closeModal.innerHTML = '&times;';
+    closeModal.style.position = 'absolute';
+    closeModal.style.top = '10px';
+    closeModal.style.right = '20px';
+    closeModal.style.color = 'white';
+    closeModal.style.fontSize = '40px';
+    closeModal.style.fontWeight = 'bold';
+    closeModal.style.cursor = 'pointer';
+    closeModal.addEventListener('click', () => modal.style.display = 'none');
+
+    modal.appendChild(closeModal);
+
+    document.body.appendChild(modal);
+
+    // Close the modal when clicking outside the image
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
+
+    return modal;
+}
+
+
+
+
+
+document.addEventListener('DOMContentLoaded', function() {
+
+
+
+
+});
+
+function fetchData() {
+    const searchParams = new URLSearchParams();
+    // Add all input values to the search parameters only if they have been provided
+    document.querySelectorAll('.search-input:not(#distribution)').forEach(input => {
+        if (input.value) { // Check if the input has a value
+            searchParams.append(input.name, input.value);
+        }
+    });
+
+    // Handle multi-select for DISTRIBUTION
+    const distributionSelect = document.getElementById('distribution');
+    const selectedDistributions = Array.from(distributionSelect.selectedOptions).map(option => option.value);
+    if (selectedDistributions.length > 0) {
+        // Join selected distribution codes with a comma and append to search parameters
+        searchParams.append('DISTRIBUTION', selectedDistributions.join(','));
+    }
+
+    // Append the altitudinal values only if they are provided
+    const altInferiorValue = document.getElementById('altitudinal-inferior').value;
+    const altSuperiorValue = document.getElementById('altitudinal-superior').value;
+    if (altInferiorValue) {
+        searchParams.append('ALTITUDINAL_INFERIOR', altInferiorValue);
+    }
+    if (altSuperiorValue) {
+        searchParams.append('ALTITUDINAL_SUPERIOR', altSuperiorValue);
+    }
+
+    displayMessage("Fetch button clicked, sending request...");
+
+    // Replace the URL with the appropriate endpoint if necessary
+    fetch(`https://speciesdb.ddns.net/query?${searchParams.toString()}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok: ' + response.statusText);
+            }
+            return response.json();
+        })
+        .then(data => {
+            displayMessage("Data received successfully");
+            document.getElementById('data').textContent = JSON.stringify(data, null, 2);
+            queryGBIFSpeciesMedia(data);
+
+            // Clear existing markers
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker) {
+                    map.removeLayer(layer);
+                }
+            });
+
+            // Iterate over each item in the data array and add markers to the map
+            data.forEach(item => {
+                let popupContent = `ID: ${item.ID}<br>`;
+                if (item.GENUS && item.SPECIFIC_EPITHET) {
+                    popupContent += `Species: ${item.GENUS} ${item.SPECIFIC_EPITHET}<br>`;
+                } else if (item.SPECIES) {
+                    popupContent += `Species: ${item.SPECIES}<br>`;
+                }
+                popupContent += `Type: ${item.TYPE}<br>`;
+                popupContent += `Origin: ${item.ORIGIN}<br>`;
+
+                // Handle DISTRIBUTION_NORTH field
+                if (item.DISTRIBUTION_NORTH && coordinates[item.DISTRIBUTION_NORTH]) {
+                    L.marker(coordinates[item.DISTRIBUTION_NORTH]).addTo(map)
+                        .bindPopup(popupContent + `North Distribution: ${item.DISTRIBUTION_NORTH}`);
+                }
+
+                // Handle DISTRIBUTION_SOUTH field
+                if (item.DISTRIBUTION_SOUTH && coordinates[item.DISTRIBUTION_SOUTH]) {
+                    L.marker(coordinates[item.DISTRIBUTION_SOUTH]).addTo(map)
+                        .bindPopup(popupContent + `South Distribution: ${item.DISTRIBUTION_SOUTH}`);
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Fetch error:', error);
+            displayMessage('Fetch error: ' + error.message, true);
+        });
+}
+
+function populateResultsTable(data) {
+    const tableBody = document.querySelector('#resultsTable tbody');
+    tableBody.innerHTML = ''; // Clear existing rows
+
+    data.forEach(item => {
+        const row = tableBody.insertRow();
+
+        // ID
+        const cellID = row.insertCell();
+        cellID.textContent = item.ID;
+
+        // Species
+        const cellSpecies = row.insertCell();
+        cellSpecies.textContent = item.SPECIES;
+
+        // Family
+        const cellFamily = row.insertCell();
+        cellFamily.textContent = item.FAMILY || 'Family not found'; // Assuming 'FAMILY' is the correct field
+
+        // Kingdom
+        const cellKingdom = row.insertCell();
+        cellKingdom.textContent = item.KINGDOM || 'Kingdom not found'; // Assuming 'KINGDOM' is the correct field
+
+        // Type
+        const cellType = row.insertCell();
+        cellType.textContent = item.TYPE;
+
+        // Origin
+        const cellOrigin = row.insertCell();
+        cellOrigin.textContent = item.ORIGIN;
+
+        // Distribution
+        const cellDistribution = row.insertCell();
+        cellDistribution.textContent = item.DISTRIBUTION;
+
+        // Altitudinal Range
+        const cellAltitudinalRange = row.insertCell();
+        cellAltitudinalRange.textContent = `${item.ALTITUDINAL_INFERIOR} - ${item.ALTITUDINAL_SUPERIOR}`;
+
+        // Distribution Details (North and South)
+        const cellDistributionDetails = row.insertCell();
+        cellDistributionDetails.textContent = `North: ${item.DISTRIBUTION_NORTH}, South: ${item.DISTRIBUTION_SOUTH}`;
+
+        // Images and Map placeholders
+        const cellImagesAvailable = row.insertCell();
+        cellImagesAvailable.innerHTML = 'View'; // Placeholder for image viewing functionality
+
+        const cellMap = row.insertCell();
+        cellMap.textContent = 'Map Placeholder'; // Placeholder, you might want to integrate a mini-map or link to a map view
+    });
+}
+
+
+    // Synchronize the slider and input for Altitudinal Inferior
+    const altInferiorInput = document.getElementById('altitudinal-inferior');
+    const altInferiorSlider = document.getElementById('altitudinal-inferior-slider');
+    altInferiorInput.addEventListener('input', function() {
+        altInferiorSlider.value = this.value;
+    });
+    altInferiorSlider.addEventListener('input', function() {
+        altInferiorInput.value = this.value;
+    });
+
+    // Synchronize the slider and input for Altitudinal Superior
+    const altSuperiorInput = document.getElementById('altitudinal-superior');
+    const altSuperiorSlider = document.getElementById('altitudinal-superior-slider');
+    altSuperiorInput.addEventListener('input', function() {
+        altSuperiorSlider.value = this.value;
+    });
+    altSuperiorSlider.addEventListener('input', function() {
+        altSuperiorInput.value = this.value;
+    });
+
+    document.getElementById('fetchDataBtn').addEventListener('click', fetchData);
+    document.getElementById('clearDataBtn').addEventListener('click', clearData);
+
+
+    function setupSeeMoreLink(speciesInfoElement, taxonKey) {
+    const seeMoreLink = speciesInfoElement.querySelector('.see-more');
+    if (seeMoreLink) {
+        seeMoreLink.addEventListener('click', function(event) {
+            event.preventDefault();
+            // Create an image container if it doesn't exist
+            let imageContainer = speciesInfoElement.querySelector('.image-container');
+            if (!imageContainer) {
+                imageContainer = document.createElement('div');
+                imageContainer.className = 'image-container';
+                speciesInfoElement.appendChild(imageContainer);
+            }
+            
+            // Toggle the display of the image container
+            imageContainer.style.display = imageContainer.style.display === 'none' ? 'block' : 'none';
+            
+            // If the image container is being shown and images have not been loaded yet, call queryGBIFSpeciesImages
+            if (imageContainer.style.display === 'block' && !imageContainer.hasAttribute('data-loaded')) {
+                queryGBIFSpeciesImages(taxonKey, imageContainer);
+                imageContainer.setAttribute('data-loaded', 'true');
+            }
+        });
+    }
+}
+
+
+
+
+function displayMessage(message, isError = false) {
+    const messageElement = document.getElementById('messages');
+    messageElement.textContent = message;
+    messageElement.style.color = isError ? 'red' : 'green';
+}
+
+function clearData() {
+    // Clear text content in the 'data' and 'messages' elements
+    document.getElementById('data').textContent = '';
+    document.getElementById('messages').textContent = '';
+
+    // Clear the table body by removing each row
+    const tableBody = document.querySelector('#resultsTable tbody');
+    while (tableBody.firstChild) {
+        tableBody.removeChild(tableBody.firstChild);
+    }
+
+    // Reset all input fields to their default values, if needed
+    document.querySelectorAll('.search-input').forEach(input => {
+         input.value = '';
+         if (input.type === 'range') {
+             input.value = input.min;
+         }
+     });
+
+    // Reset the altitudinal input values separately, if needed
+    const altInferiorInput = document.getElementById('altitudinal-inferior');
+    const altSuperiorInput = document.getElementById('altitudinal-superior');
+    altInferiorInput.value = altInferiorInput.min;
+    altSuperiorInput.value = altSuperiorInput.min;
+
+    // Clear existing markers from the map
+    map.eachLayer(function(layer) {
+        if (layer instanceof L.Marker) {
+            map.removeLayer(layer);
+        }
+    });
+
+    // Remove dynamically created sections for species information and images
+    document.querySelectorAll('.species-info-container').forEach(container => {
+        container.remove();
+    });
+
+    // Additionally, remove any standalone images that might have been directly appended to the body
+    document.querySelectorAll('body > img').forEach(img => {
+        img.remove();
+    });
+
+    // Clear any other dynamic content related to the results here
+}
+
+
+
+// Map Initialization
+        var map = L.map('map').setView([-33.4378, -70.6504], 4);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+      
+        // Region Coordinates and Names
+        const coordinates = {
+            "AYP": [-18.4783, -70.3126], "TAR": [-20.2140, -70.1522], "ANT": [-23.6524, -70.3954],
+            "ATA": [-27.3668, -70.3323], "COQ": [-29.9533, -71.3395],             "VAL": [-33.0472, -71.6127], "RME": [-33.4378, -70.6504], "LBO": [-34.5755, -71.0022],
+            "MAU": [-35.4264, -71.6554], "NUB": [-36.7226, -72.1114], "BIO": [-37.4689, -72.3527],
+            "ARA": [-38.9489, -72.3311], "LRI": [-40.2310, -72.3311], "LLA": [-41.4717, -72.9369],
+            "AIS": [-45.5752, -72.0662], "MAG": [-53.1638, -70.9171], "JFE": [-33.6148, -78.8311],
+            "IPA": [-27.1127, -109.3497], "IDE": [-26.0000, -80.5333]
+        };
+        // Corrected Region Names Definition
+        const regionNames = {
+            "AYP": "Arica y Parinacota",
+            "TAR": "Tarapacá",
+            "ANT": "Antofagasta",
+            "ATA": "Atacama",
+            "COQ": "Coquimbo",
+            "VAL": "Valparaíso",
+            "RME": "Metropolitana de Santiago",
+            "LBO": "Libertador General Bernardo O'Higgins",
+            "MAU": "Maule",
+            "NUB": "Ñuble",
+            "BIO": "Biobío",
+            "ARA": "Araucanía",
+            "LRI": "Los Ríos",
+            "LLA": "Los Lagos",
+            "AIS": "Aisén",
+            "MAG": "Magallanes",
+            "JFE": "Juan Fernández",
+            "IPA": "Isla de Pascua",
+            "IDE": "Islas Desventuradas"
+        };
+
+
+// Corrected Function to Populate Distribution Dropdowns Using Full Names
+    function populateRegionSelects() {
+        const northSelect = document.getElementById("distribution-north");
+        const southSelect = document.getElementById("distribution-south");
+        Object.entries(regionNames).forEach(([code, name]) => {
+            let optionNorth = new Option(name, code); // Display name, but value is code
+            let optionSouth = new Option(name, code); // Same for south
+            northSelect.add(optionNorth);
+            southSelect.add(optionSouth);
+        });
+    }
+// Call the function to populate the selects when the page loads or when needed
+populateRegionSelects();
+// Function to populate a dropdown (select element) with options
+function populateDropdown(selectElementId, options) {
+    const selectElement = document.getElementById(selectElementId);
+    options.forEach(optionValue => {
+        const option = document.createElement('option');
+        option.value = option.text = optionValue; // Assuming optionValue is a string
+        selectElement.appendChild(option);
+    });
+}
+   
+        // Populate Distribution dropdowns
+        const distributionNorthSelect = document.getElementById('distribution-north');
+        const distributionSouthSelect = document.getElementById('distribution-south');
+        Object.keys(coordinates).forEach(key => {
+            const optionNorth = document.createElement('option');
+            optionNorth.value = optionNorth.text = key;
+            distributionNorthSelect.appendChild(optionNorth);
+
+            const optionSouth = document.createElement('option');
+            optionSouth.value = optionSouth.text = key;
+            distributionSouthSelect.appendChild(optionSouth);
+        });
+
+      
+        // Corrected way to populate Distribution dropdowns using the names from regionNames object
+        Object.values(regionNames).forEach(regionName => {
+            populateDropdown('distribution-north', [regionName]);
+            populateDropdown('distribution-south', [regionName]);
+        });
+
+    // Autocomplete functionality for specific search inputs
+document.querySelectorAll('.search-input').forEach(input => {
+    const dataListId = input.getAttribute('list');
+    const dataList = document.getElementById(dataListId);
+
+    input.addEventListener('input', function() {
+        const value = this.value;
+        if (value.length < 1) {
+            dataList.innerHTML = '';
+            return;
+        }
+        fetch(`https://speciesdb.ddns.net/autocomplete?column=${input.name.toUpperCase()}&prefix=${encodeURIComponent(value)}`)
+            .then(response => response.json())
+            .then(items => {
+                dataList.innerHTML = '';
+                // Limit to the first 10 items
+                items.slice(0, 10).forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item;
+                    dataList.appendChild(option);
+                });
+                if (!dataList.options.length) {
+                    const option = document.createElement('option');
+                    option.value = "No suggestions found";
+                    option.disabled = true;
+                    dataList.appendChild(option);
+                }
+            })
+            .catch(error => {
+                console.error('Autocomplete error:', error);
+                dataList.innerHTML = '';
+                const option = document.createElement('option');
+                option.value = "Error loading suggestions";
+                option.disabled = true;
+                dataList.appendChild(option);
+            });
+    });
+});
+</script>
+</body>
+</html>
